@@ -1,4 +1,4 @@
-# @zhengjy01/dsh-zhihu
+# @zhengjunyao/dsh-zhihu
 
 A [Zhihu](https://www.zhihu.com) (知乎) plugin for [DeepSeek Harness](https://github.com/deepseek-ai/dsh): it wraps the local **zhihu CLI** — [pyzhihu-cli](https://github.com/BAIGUANGMEI/zhihu-cli), command name `zhihu` — as `zhihu_*` agent tools. Search questions, read the hot list, inspect questions / answers / comments, look up users, browse the recommended feed, topics and notifications. Publishing, voting, following and deleting are **off by default** and gated behind an explicit `readOnly` switch.
 
@@ -149,7 +149,7 @@ Artifacts: `lib/index.js` (host, ESM) + `lib/client.js` (browser closure-factory
 ## Install into a profile
 
 ```bash
-dsh plugin --profile web add @zhengjy01/dsh-zhihu
+dsh plugin --profile web add @zhengjunyao/dsh-zhihu
 dsh plugin --profile web add link:/path/to/dsh-zhihu
 # or, once published
 dsh plugin --profile web add github:zhengjy01/dsh-zhihu

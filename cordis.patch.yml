@@ -8,7 +8,7 @@
 #   dsh plugin --profile web add github:zhengjy01/dsh-zhihu
 - insert:
     - id: zhihu
-      name: '@zhengjy01/dsh-zhihu'
+      name: '@zhengjunyao/dsh-zhihu'
       config:
         announceToAgent: true   # 在系统提示中公告插件（工具 + 能力说明）
         enabled: true           # 插件总开关

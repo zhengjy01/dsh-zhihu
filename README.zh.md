@@ -1,4 +1,4 @@
-# @zhengjy01/dsh-zhihu
+# @zhengjunyao/dsh-zhihu
 
 [DeepSeek Harness](https://github.com/deepseek-ai/dsh) 的知乎插件：把本机的知乎命令行工具 **[pyzhihu-cli](https://github.com/BAIGUANGMEI/zhihu-cli)**（命令名 `zhihu`）包装成 `zhihu_*` agent 工具——搜问题、看热榜、读问题/回答/评论、查用户、刷推荐流、看话题与通知；发布、点赞、关注、删除等写操作**默认关闭**，由 `readOnly` 开关显式放开。
 
@@ -157,7 +157,7 @@ node tests/client.mjs  # 在合成的 __ModuleLoader__ 里执行 lib/client.js�
 ## 安装到 profile
 
 ```bash
-dsh plugin --profile web add @zhengjy01/dsh-zhihu
+dsh plugin --profile web add @zhengjunyao/dsh-zhihu
 dsh plugin --profile web add link:/path/to/dsh-zhihu
 # 或发布后
 dsh plugin --profile web add github:zhengjy01/dsh-zhihu

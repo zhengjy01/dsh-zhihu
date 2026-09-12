@@ -1,5 +1,5 @@
 {
-  "$comment": "@zhengjy01/dsh-zhihu 的发布配置，被 scripts/release.mjs 读取。",
+  "$comment": "@zhengjunyao/dsh-zhihu 的发布配置，被 scripts/release.mjs 读取。",
   "build": "pnpm build",
   "aggregates": [
     {
@@ -8,7 +8,7 @@
     },
     {
       "name": "本机 web profile（可选）",
-      "note": "dsh plugin --profile web add @zhengjy01/dsh-zhihu@<ver> —— 重启 dsh web 需先征得用户同意"
+      "note": "dsh plugin --profile web add @zhengjunyao/dsh-zhihu@<ver> —— 重启 dsh web 需先征得用户同意"
     }
   ]
 }

@@ -5,7 +5,7 @@
  */
 import { clientBundle } from './shared/tsdown.client.ts'
 
-export default clientBundle('@zhengjy01/dsh-zhihu', ['src/index.ts'], {
+export default clientBundle('@zhengjunyao/dsh-zhihu', ['src/index.ts'], {
   libExternal: [
     '@deepseek-ai/dsh-host-webserver',
     '@deepseek-ai/dsh-system-prompt',
