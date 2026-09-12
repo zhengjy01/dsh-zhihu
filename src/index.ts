@@ -7,7 +7,7 @@
  * and deletion are mounted only when the effective readOnly switch is off.
  * Login lives with the CLI (~/.zhihu-cli/cookies.json, QR PNG at
  * ~/.zhihu-cli/login_qrcode.png) and this plugin's own config is stored in
- * ~/.dsh/dsh-zhihu.json (mode 0600). No dsh source changes.
+ * <DSH_HOME>/dsh-zhihu.json (mode 0600, DSH_HOME falls back to ~/.dsh).
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -47,7 +47,7 @@ export interface Config {
   enabled?: boolean
   /**
    * Seed for the read-only switch. The real switch lives in
-   * ~/.dsh/dsh-zhihu.json; this value applies only until the store has an
+   * <DSH_HOME>/dsh-zhihu.json; this value applies only until the store has an
    * explicit opinion (mirrors dsh-xianyu).
    */
   readOnly?: boolean

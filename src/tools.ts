@@ -203,7 +203,7 @@ export function zhihuConfigTool(ctx: ToolContext) {
   return defineTool({
     name: 'zhihu_config',
     description:
-      '配置 dsh-zhihu：readOnly 控制是否只注册读取类工具（true=只读，默认；false 才会注册发布/赞同/关注/删除等写工具）；cliPath 指定知乎 CLI 命令名或绝对路径（默认 zhihu）；timeoutMs 单次 CLI 超时（默认 90000）；loginWaitMs 二维码登录时等待扫码的毫秒数（默认 15000）；proxy 代理设置（空=继承环境变量，none=强制不走代理，或填代理 URL）；cliHome 指定 CLI 配置目录（默认 ~/.zhihu-cli）。传 reset: true 恢复默认。配置存 ~/.dsh/dsh-zhihu.json（0600）。不带任何参数调用即返回当前配置。',
+      '配置 dsh-zhihu：readOnly 控制是否只注册读取类工具（true=只读，默认；false 才会注册发布/赞同/关注/删除等写工具）；cliPath 指定知乎 CLI 命令名或绝对路径（默认 zhihu）；timeoutMs 单次 CLI 超时（默认 90000）；loginWaitMs 二维码登录时等待扫码的毫秒数（默认 15000）；proxy 代理设置（空=继承环境变量，none=强制不走代理，或填代理 URL）；cliHome 指定 CLI 配置目录（默认 ~/.zhihu-cli）。传 reset: true 恢复默认。配置存 DSH_HOME 下（默认 ~/.dsh/dsh-zhihu.json，0600）。不带任何参数调用即返回当前配置。',
     parameters: {
       readOnly: { type: 'boolean', description: '是否只读：true 只注册读取工具；false 放开写工具' },
       cliPath: { type: 'string', description: '知乎 CLI 命令名或绝对路径（默认 zhihu）' },

@@ -1,8 +1,9 @@
 /**
  * dsh-zhihu — configuration store and login-state reader.
  *
- * Owns ~/.dsh/dsh-zhihu.json (mode 0600) and every path the plugin derives
- * from it. Credentials are never stored here: the CLI keeps the Zhihu cookies
+ * Owns <DSH_HOME>/dsh-zhihu.json (mode 0600) and every path the plugin derives
+ * from it. The harness home is `DSH_HOME` when set (some machines relocate it),
+ * falling back to ~/.dsh. Credentials are never stored here: the CLI keeps the Zhihu cookies
  * in <cliHome>/cookies.json (the CLI itself chmods that file 0600) and this
  * module only ever reports whether the required cookies are present.
  */
@@ -14,11 +15,21 @@ import path from 'node:path'
 
 import { defaultCliHome, proxyMode, resolveExecutable } from './exec.ts'
 
+/**
+ * The harness home directory: `DSH_HOME` per harness convention, else ~/.dsh.
+ * Resolved at module load — the host sets `DSH_HOME` before loading plugins, so
+ * a machine that relocated its home does not get files written to the wrong place.
+ */
+export function dshHome(): string {
+  const override = process.env.DSH_HOME
+  return override !== undefined && override !== '' ? override : path.join(homedir(), '.dsh')
+}
+
 /** Machine-wide config location (mode 0600). */
-export const DEFAULT_CONFIG_FILE = path.join(homedir(), '.dsh', 'dsh-zhihu.json')
+export const DEFAULT_CONFIG_FILE = path.join(dshHome(), 'dsh-zhihu.json')
 
 /** Plugin scratch directory (login log). */
-export const DEFAULT_DATA_DIR = path.join(homedir(), '.dsh', 'dsh-zhihu')
+export const DEFAULT_DATA_DIR = path.join(dshHome(), 'dsh-zhihu')
 
 /** Cookies the CLI refuses to work without. */
 export const REQUIRED_COOKIES: readonly string[] = ['z_c0', '_xsrf', 'd_c0']

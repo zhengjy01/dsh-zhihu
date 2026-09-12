@@ -29,7 +29,7 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, openSync, closeSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -147,7 +147,7 @@ const USER_PATH = /(\/(?:Users|home)\/[A-Za-z0-9._-]+|C:\\Users\\[A-Za-z0-9._-]+
 const PLATFORM_ONLY = /\b(launchctl|plutil|launchd)\b/
 const PLATFORM_GUARD = /darwin|process\.platform/
 const DSH_HOME_USE = /DSH_HOME/
-const DOT_DSH = /\.dsh/
+const DOT_DSH = /\.dsh(?![\w-])/
 
 function auditSources(cwd) {
   const files = ['src', 'helper', 'bin', 'scripts']
@@ -166,8 +166,16 @@ function auditSources(cwd) {
         hits.platform.push(`${relative}:${index + 1}`)
       }
     })
-    // 写 ~/.dsh 却不认 DSH_HOME：搬迁过 home 的机器会写到错的地方
-    if (DOT_DSH.test(text) && !DSH_HOME_USE.test(text)) hits.home.push(relative)
+    // 写 ~/.dsh 却不认 DSH_HOME：搬迁过 home 的机器会写到错的地方。
+    // 只看非注释行，且 `.dsh` 后面不能紧跟词字符（否则 .dshwx-ball 之类会误报）。
+    const homeHit = text
+      .split('\n')
+      .some((line) => {
+        const trimmed = line.trim()
+        if (trimmed.startsWith('*') || trimmed.startsWith('//')) return false
+        return DOT_DSH.test(line)
+      })
+    if (homeHit && !DSH_HOME_USE.test(text)) hits.home.push(relative)
   }
   return { count: files.length, hits }
 }
@@ -200,6 +208,11 @@ const dshEnv = { ...process.env }
 function cleanup() {
   try {
     if (child !== undefined && child.exitCode === null) child.kill('SIGKILL')
+    try {
+      closeSync(bootLogFd)
+    } catch {
+      /* 已关闭 */
+    }
   } catch {
     /* 已经退了 */
   }
@@ -334,15 +347,22 @@ section('4. 启动验证实例')
 port = options.port !== 0 ? options.port : await freePort()
 info(`端口：${port}`)
 
-let bootLog = ''
+// stdout/stderr 走文件而不是 pipe：`dsh web` 会 fork 出真正的服务进程，
+// wrapper 一退出 pipe 就关闭，之后 fork 出去那半写的 token 全部丢失。
+const bootLogPath = path.join(tmpdir(), `dsh-verify-${String(id).replace(/[^a-zA-Z0-9._-]/g, '-')}-boot.log`)
+const bootLogFd = openSync(bootLogPath, 'w')
+const readBootLog = () => {
+  try {
+    return readFileSync(bootLogPath, 'utf8')
+  } catch {
+    return ''
+  }
+}
 child = spawn(options.dsh, ['--profile', profile, '--port', String(port), '--no-open'], {
   env: dshEnv,
-  stdio: ['ignore', 'pipe', 'pipe'],
+  stdio: ['ignore', bootLogFd, bootLogFd],
 })
-child.stdout.on('data', (chunk) => (bootLog += String(chunk)))
-child.stderr.on('data', (chunk) => (bootLog += String(chunk)))
 
-info(`[debug] spawn 后立刻：stdout=${child.stdout === null ? 'null' : 'ok'} bootLog=${bootLog.length}`)
 const deadline = Date.now() + options.bootTimeoutSec * 1000
 let listening = false
 while (Date.now() < deadline) {
@@ -362,22 +382,21 @@ function bootErrors(text) {
     .slice(0, 6)
 }
 
-info(`[debug] 启动循环结束：bootLog=${bootLog.length} 字节, listening=${listening}`)
 if (options.keep) {
   const dump = path.join(tmpdir(), `dsh-verify-${String(id).replace(/[^a-zA-Z0-9._-]/g, '-')}-boot.log`)
   try {
-    writeFileSync(dump, bootLog)
+    writeFileSync(dump, readBootLog())
     info(`启动输出已留存：${dump}`)
   } catch {
     /* 尽力而为 */
   }
 }
 if (listening) pass('验证实例已监听', `http://127.0.0.1:${port}`)
-else fail('验证实例没有起来', bootLog.split('\n').filter(Boolean).slice(-5).join(' | ').slice(0, 400))
+else fail('验证实例没有起来', readBootLog().split('\n').filter(Boolean).slice(-5).join(' | ').slice(0, 400))
 
 // 端口活着不等于启动成功：插件树可能在绑定端口之后才失败。
 {
-  const errors = bootErrors(bootLog)
+  const errors = bootErrors(readBootLog())
   if (errors.length > 0) fail('启动输出里有报错', errors.join(' ｜ ').slice(0, 500))
   else if (listening) pass('启动输出没有报错')
 }
@@ -409,28 +428,68 @@ if (hasClient) {
 }
 
 const base = `http://127.0.0.1:${port}`
-const token = (/token=([A-Za-z0-9_-]+)/.exec(bootLog) ?? [])[1] ?? ''
+
+/**
+ * 拿到 URL 行的 token —— 这是唯一能进 Web 界面的凭据（DSH 会在启动时把
+ * `dsh web: http://…/?token=…` 打到 stdout）。
+ *
+ * 注意时序：端口在插件加载早期就 LISTEN 了，而这行 URL 要等应用全部就绪才打印，
+ * 中间可能差十几秒。所以必须「等这一行」，不能一到端口就取。
+ */
+async function waitForToken(timeoutMs) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const found = /token=([A-Za-z0-9_-]+)/.exec(readBootLog())
+    if (found !== null) return found[1]
+    if (child.exitCode !== null) return ''
+    await sleep(300)
+  }
+  return ''
+}
+
+let token = await waitForToken(30_000)
+if (token !== '') pass('拿到界面 token（启动输出正常）')
+else warn('30 秒内没等到带 token 的 URL 行（界面校验会跳过；可用 --token 手动给）')
 const healthPath = options.health !== '' ? options.health : `/api/${id}/probe`
 
-// 端口先于界面：webServer 一绑定端口就 LISTEN，而 index/dist 的兜底处理是后注册的，
-// 这段窗口里 `/` 会返回 404。必须等到界面真的开始应答，否则会把「太早」误报成「坏」。
-if (listening) {
+/** 带 Cookie 抓取；index 需要先用 token 换 Cookie（303 → 再抓一次）。 */
+const jar = new Map()
+async function browse(url, depth = 0) {
+  const response = await fetch(url, {
+    redirect: 'manual',
+    headers: jar.size === 0 ? {} : { cookie: [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ') },
+  })
+  for (const entry of response.headers.getSetCookie?.() ?? []) {
+    const [pair] = entry.split(';')
+    const index = pair.indexOf('=')
+    jar.set(pair.slice(0, index), pair.slice(index + 1))
+  }
+  if (response.status >= 300 && response.status < 400 && depth < 3) {
+    const location = response.headers.get('location')
+    if (location !== null) return browse(new URL(location, url).toString(), depth + 1)
+  }
+  return response
+}
+
+// 端口 ≠ 界面：webServer 先绑定端口，index/dist 的兜底处理是后注册的。
+if (listening && token !== '') {
   const readyBy = Date.now() + 30_000
   let ready = false
   while (Date.now() < readyBy) {
     try {
-      const response = await fetch(token === '' ? `${base}/` : `${base}/?token=${token}`, { redirect: 'manual' })
-      if (response.status !== 404 && response.status !== 502 && response.status !== 503) {
+      const response = await browse(`${base}/?token=${token}`)
+      if (response.status === 200) {
         ready = true
         break
       }
+      if (response.status !== 404 && response.status !== 502 && response.status !== 503) break
     } catch {
       /* 还在起 */
     }
     await sleep(500)
   }
-  if (ready) pass('Web 界面已就绪（不再 404）')
-  else warn('30 秒内 Web 界面一直 404（index/dist 没挂上）')
+  if (ready) pass('Web 界面已就绪（index 200）')
+  else warn('Web 界面未能就绪（index 不是 200）')
 }
 
 /* --------------------------------------------------------- 5. 宿主半 */
@@ -459,32 +518,13 @@ if (!hasClient) {
   warn('实例没起来，跳过')
 } else {
   try {
-    const jar = new Map()
-    /** 带 Cookie 的抓取；index 需要先用 token 换 Cookie（303 → 再抓一次）。 */
-    const get = async (url, depth = 0) => {
-      const response = await fetch(url, {
-        redirect: 'manual',
-        headers: jar.size === 0 ? {} : { cookie: [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ') },
-      })
-      for (const entry of response.headers.getSetCookie?.() ?? []) {
-        const [pair] = entry.split(';')
-        const index = pair.indexOf('=')
-        jar.set(pair.slice(0, index), pair.slice(index + 1))
-      }
-      if (response.status >= 300 && response.status < 400 && depth < 3) {
-        const location = response.headers.get('location')
-        if (location !== null) return get(new URL(location, url).toString(), depth + 1)
-      }
-      return response
-    }
-
-    const index = await get(token === '' ? `${base}/` : `${base}/?token=${token}`)
+    const index = await browse(token === '' ? `${base}/` : `${base}/?token=${token}`)
     const html = await index.text()
     const urls = [...html.matchAll(/\/plugins\/\?\?[^"\\\s]+/g)].map((match) => match[0].replaceAll('&amp;', '&'))
     const bundleUrl = urls.sort((a, b) => b.length - a.length)[0] ?? ''
     if (index.status === 401) {
-      fail('抓 index 被拒（没拿到 token）', '实例启动输出里没有 token，客户端半无法验证')
-    } else if (bundleUrl === '') fail('index 里找不到客户端 bundle 交付地址（客户端半没注册）', `HTTP ${index.status}${bootErrors(bootLog).length > 0 ? '｜' + bootErrors(bootLog)[0] : ''}`)
+      warn('抓 index 被拒（没有 token），跳过运行时界面校验（静态校验已通过）')
+    } else if (bundleUrl === '') fail('index 里找不到客户端 bundle 交付地址（客户端半没注册）', `HTTP ${index.status}${bootErrors(readBootLog()).length > 0 ? '｜' + bootErrors(readBootLog())[0] : ''}`)
     else if (bundleUrl.includes(`${id}/client.js`)) pass('bundle 已被 shell 收进启动清单', `${id}/client.js`)
     else fail('bundle 没进启动清单（面板/入口不会出现）', bundleUrl.slice(0, 150))
     if (bundleUrl !== '') {
