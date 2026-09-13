@@ -410,6 +410,16 @@ export function failureReason(stdout: string, stderr: string, code: number): str
   if (/Not authenticated/i.test(text)) {
     return '知乎未登录：请先用 zhihu_login（二维码扫码或粘贴 Cookie）完成登录。'
   }
+  // 知乎把「匿名 + 机器人指纹」的请求整段拦在 /account/unhuman（HTTP 403 + code 40352）。
+  // pyzhihu-cli 的扫码轮询会把这个 403 静默吞掉，表面只剩「超时」——所以这里先认它，
+  // 给出可操作的下一步，而不是让用户对着二维码干等。
+  if (/unhuman|40352|系统监测到您的网络环境|安全验证/i.test(text)) {
+    return '知乎风控拦截（HTTP 403 / code 40352）：请用 zhihu_login({ mode: "browser" }) 从本机 Chrome 导入真实登录态（或稍后重试），不要靠扫码轮询。'
+  }
+  // 部分接口（话题详情，以及问题详情）要求 x-zse-96 签名，匿名与登录态都返回 403 code 10003。
+  if (/x-zse-96|zse96|"code"\s*:\s*10003|code\s+10003/i.test(text)) {
+    return '知乎接口要求 x-zse-96 签名（HTTP 403 / code 10003）：本插件读不到该接口（话题详情不可用；问题详情已自动降级为回答列表）。'
+  }
   if (/Timed out|timeout/i.test(text)) return '知乎请求超时（网络或风控）。'
   if (code === 124) return 'CLI 执行超时（可调大 zhihu_config 的 timeoutMs）。'
   const line = text

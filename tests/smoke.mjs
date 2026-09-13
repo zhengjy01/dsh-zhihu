@@ -137,6 +137,8 @@ check('空 profile 全默认', emptyProfile().name === '' && emptyProfile().vote
 console.log('\n[4] 失败原因识别')
 check('未登录被识别', failureReason('  ✗ Not authenticated — run zhihu login', '', 1).includes('未登录'))
 check('退出码 124 → 超时提示', failureReason('', '', 124).includes('超时'))
+check('风控 40352/unhuman 被识别', failureReason('{"error":{"code":40352,"message":"系统监测到您的网络环境存在异常"}}', '', 1).includes('风控'))
+check('x-zse-96 签名 403/10003 被识别', failureReason('✗ 403 code 10003 (x-zse-96)', '', 1).includes('签名'))
 
 console.log('\n[5] 配置读写与只读开关')
 const store = new ZhihuStore(true)
