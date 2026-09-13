@@ -5,6 +5,25 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-13
+
+### 修复 (Fixed)
+
+- fix(home): 配置与数据目录认 DSH_HOME（补 v0.1.1）
+- fix(parse): 风控 403/unhuman 与 x-zse-96 签名失败给出可操作提示
+
+### 其它 (Changed)
+
+- docs: README 增补故障排查与可移植性验证命令；收录条目去掉非法 tarball
+- chore: 接入可移植性验证 SOP（同步 kit 版 portability.mjs + verify 脚本）
+- chore: 准备 awesome-dsh-plugin 收录条目（待仓库满 1 天 + 提交数 ≥ 10 后提 PR）
+
+### 兼容性 (Compatibility)
+
+- DSH：`>=0.1.5-rc.1`
+- Node：`^22.19.0 || >=24.0.0`
+- DSH peer：^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.1 || ^0.1.5-rc.1
+
 ## [0.1.0] - 2026-09-12
 
 ### 新增 (Added)

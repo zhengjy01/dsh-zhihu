@@ -1,6 +1,6 @@
 {
   "name": "@zhengjunyao/dsh-zhihu",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Zhihu (知乎) for DeepSeek Harness: wraps the local pyzhihu-cli CLI (search / hot list / question / answer / user / feed / topic / collections / notifications) as zhihu_* agent tools, plus a web panel with QR-code login, config and quick hot-list / search; publishing, voting, following and deletion stay behind an explicit readOnly switch",
   "type": "module",
   "main": "lib/index.js",
