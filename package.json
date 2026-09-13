@@ -52,7 +52,10 @@
     "bundle": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "node tests/smoke.mjs",
-    "test:e2e": "node tests/e2e.mjs"
+    "test:e2e": "node tests/e2e.mjs",
+    "verify": "node scripts/portability.mjs --health /api/dsh-zhihu/status",
+    "verify:full": "node scripts/portability.mjs --health /api/dsh-zhihu/status --stability 30",
+    "verify:quick": "node scripts/portability.mjs --skip-audit --stability 5 --health /api/dsh-zhihu/status"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

@@ -23,6 +23,7 @@
  *   node scripts/portability.mjs --health /api/foo/probe --restart-route /api/foo/restart
  *   node scripts/portability.mjs --no-isolate   # 共享本机 ~/.dsh（默认是隔离的临时 home）
  *   node scripts/portability.mjs --json         # 机器可读报告
+ *   node scripts/portability.mjs --stability 30 # 就绪后多守一会儿（默认 15 秒）
  *   node scripts/portability.mjs --cwd <插件目录>
  *
  * 退出码：0 = 通过（可以发布），1 = 未通过，2 = 用法/环境错误。
@@ -59,6 +60,8 @@ const options = {
   isolate: !has('--no-isolate'),
   json: has('--json'),
   skipAudit: has('--skip-audit'),
+  /** 就绪后不再做稳定性观察（默认做）。 */
+  skipStability: has('--skip-stability'),
 }
 
 /* ------------------------------------------------------------------ 输出 */
@@ -152,7 +155,8 @@ const DOT_DSH = /\.dsh(?![\w-])/
 function auditSources(cwd) {
   const files = ['src', 'helper', 'bin', 'scripts']
     .flatMap((dir) => listSources(path.join(cwd, dir)))
-    .filter((file) => !file.endsWith('.min.js'))
+    // 浏览器半不会 shell out、也不会解析 home：扫它只会造成假阳性
+    .filter((file) => !file.endsWith('.min.js') && !file.includes(`${path.sep}client${path.sep}`))
   const hits = { absolute: [], platform: [], home: [] }
   for (const file of files) {
     const text = readFileSync(file, 'utf8')
@@ -202,6 +206,8 @@ let tarball
 let isolatedHome = ''
 let child
 let port = 0
+/** 验证用 profile 名（先声明：cleanup/finish 可能在它赋值前就被调用）。 */
+let profile = ''
 const dshEnv = { ...process.env }
 
 /** 收尾：停验证实例、删 profile、删 tarball。 */
@@ -280,7 +286,8 @@ if (!options.skipAudit) {
 /* --------------------------------------------------------------- 2. 打包 */
 
 section('2. 打包')
-const pack = run('npm', ['pack', '--json'], { cwd: options.cwd })
+// --ignore-scripts：`prepare` 会把构建日志打进 stdout，污染 --json 输出（构建由调用方自己负责）
+const pack = run('npm', ['pack', '--json', '--ignore-scripts'], { cwd: options.cwd })
 if (!pack.ok) {
   fail('npm pack 失败', pack.stderr.trim().slice(0, 300))
   finish()
@@ -289,7 +296,16 @@ let packed = null
 try {
   packed = JSON.parse(pack.stdout)[0]
 } catch {
-  packed = null
+  // 仍然兜底：抓 stdout 里最后一个 JSON 数组（构建脚本可能插了别的输出）
+  const start = pack.stdout.lastIndexOf('[')
+  const end = pack.stdout.lastIndexOf(']')
+  if (start >= 0 && end > start) {
+    try {
+      packed = JSON.parse(pack.stdout.slice(start, end + 1))[0]
+    } catch {
+      packed = null
+    }
+  }
 }
 if (packed === null) {
   fail('无法解析 npm pack 输出')
@@ -314,7 +330,7 @@ else fail('package.json 没进包')
 
 /* --------------------------------------------------------- 3. 干净安装 */
 
-const profile = `verify-${String(id).replace(/[^a-zA-Z0-9._-]/g, '-')}`
+profile = `verify-${String(id).replace(/[^a-zA-Z0-9._-]/g, '-')}`
 if (options.isolate) {
   isolatedHome = mkdtempSync(path.join(tmpdir(), 'dsh-verify-home-'))
   dshEnv.DSH_HOME = isolatedHome
@@ -577,5 +593,53 @@ if (options.restartRoute !== '') {
     }
   }
 }
+
+/* ------------------------------------------------- 8. 稳定性观察（迟到崩溃） */
+
+// 这次真的栽过：`dsh web` 先绑端口、后加载插件树，于是「端口应答 / 界面 200」可能只是
+// 一段**临时**状态——新宿主几秒后死于 `plugin tree failed to load … writer lock`，
+// 而门禁在它死之前就宣布通过了。所以就绪之后必须再守一段时间，确认它没在背后死掉。
+if (listening && !options.skipStability) {
+  section('8. 稳定性观察（就绪之后是否仍活着）')
+  const watchSec = Number(flag('--stability', '15')) || 15
+  const deadline2 = Date.now() + watchSec * 1000
+  let alive = true
+  let lastPid = null
+  let checks = 0
+  let firstError = ''
+  while (Date.now() < deadline2) {
+    try {
+      const response = await fetch(`${base}${healthPath}`)
+      if (!response.ok) {
+        alive = false
+        firstError = `健康路由 ${response.status}`
+        break
+      }
+      const body = await response.json().catch(() => null)
+      const pid = body?.pid ?? null
+      if (lastPid !== null && pid !== null && pid !== lastPid) {
+        alive = false
+        firstError = `进程被替换（${lastPid} → ${pid}）`
+        break
+      }
+      lastPid = pid
+      checks += 1
+    } catch (error) {
+      alive = false
+      firstError = String(error.message ?? error)
+      break
+    }
+    await sleep(2_000)
+  }
+  // 顺手再看一眼启动输出里有没有新的致命行
+  const fatal = bootErrors(readBootLog())
+  if (alive && fatal.length === 0) {
+    pass(`就绪后 ${watchSec}s 内保持稳定`, `${checks} 次探测，pid ${lastPid ?? '?'}`)
+  } else {
+    fail('就绪后没撑住（迟到崩溃 = 假成功）', firstError !== '' ? firstError : fatal.join(' ｜ ').slice(0, 300))
+  }
+}
+
+finish()
 
 finish()
