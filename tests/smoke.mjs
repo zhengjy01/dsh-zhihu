@@ -24,9 +24,12 @@ import {
   compactItem,
   compactList,
   compactProfile,
+  configPath,
+  dataDir as resolveDataDir,
   decryptValue,
   deriveKey,
   describeProfile,
+  dshHome,
   emptyProfile,
   failureReason,
   parseCookieString,
@@ -306,6 +309,30 @@ try {
   realAfter = null
 }
 check('真实 ~/.zhihu-cli/cookies.json 内容未被改动', realAfter === realBefore, realCliHome)
+
+console.log('\n[13] DSH_HOME 感知（可移植性清单要求 插件覆盖变量 → DSH_HOME → ~/.dsh）')
+{
+  const savedHome = process.env.DSH_HOME
+  const savedConfig = process.env.DSH_ZHIHU_CONFIG
+  const savedData = process.env.DSH_ZHIHU_DATA_DIR
+  const put = (key, value) => {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+  const fakeHome = path.join(tempDir, 'relocated-dsh-home')
+  const overrideFile = path.join(tempDir, 'explicit-override.json')
+  process.env.DSH_HOME = fakeHome
+  delete process.env.DSH_ZHIHU_CONFIG
+  delete process.env.DSH_ZHIHU_DATA_DIR
+  eq('dshHome() 认 DSH_HOME', dshHome(), fakeHome)
+  eq('configPath() 落到 DSH_HOME 下', configPath(), path.join(fakeHome, 'dsh-zhihu.json'))
+  eq('dataDir() 落到 DSH_HOME 下', resolveDataDir(), path.join(fakeHome, 'dsh-zhihu'))
+  process.env.DSH_ZHIHU_CONFIG = overrideFile
+  eq('插件覆盖变量仍优先于 DSH_HOME', configPath(), overrideFile)
+  put('DSH_HOME', savedHome)
+  put('DSH_ZHIHU_CONFIG', savedConfig)
+  put('DSH_ZHIHU_DATA_DIR', savedData)
+}
 
 await rm(tempDir, { recursive: true, force: true })
 

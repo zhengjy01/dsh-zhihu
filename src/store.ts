@@ -10,26 +10,19 @@
 
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import path from 'node:path'
 
+import { pluginPath } from './home.ts'
 import { defaultCliHome, proxyMode, resolveExecutable } from './exec.ts'
 
-/**
- * The harness home directory: `DSH_HOME` per harness convention, else ~/.dsh.
- * Resolved at module load — the host sets `DSH_HOME` before loading plugins, so
- * a machine that relocated its home does not get files written to the wrong place.
- */
-export function dshHome(): string {
-  const override = process.env.DSH_HOME
-  return override !== undefined && override !== '' ? override : path.join(homedir(), '.dsh')
-}
+/** Re-exported for host consumers (the shared home resolver lives in home.ts). */
+export { dshHome } from './home.ts'
 
 /** Machine-wide config location (mode 0600). */
-export const DEFAULT_CONFIG_FILE = path.join(dshHome(), 'dsh-zhihu.json')
+export const DEFAULT_CONFIG_FILE = pluginPath(undefined, 'dsh-zhihu.json')
 
 /** Plugin scratch directory (login log). */
-export const DEFAULT_DATA_DIR = path.join(dshHome(), 'dsh-zhihu')
+export const DEFAULT_DATA_DIR = pluginPath(undefined, 'dsh-zhihu')
 
 /** Cookies the CLI refuses to work without. */
 export const REQUIRED_COOKIES: readonly string[] = ['z_c0', '_xsrf', 'd_c0']
@@ -43,16 +36,14 @@ export const DEFAULT_LOGIN_WAIT_MS = 15_000
 /** Default command name when config.cliPath is empty. */
 export const DEFAULT_CLI_PATH = 'zhihu'
 
-/** Test override for the config location (used by the smoke tests). */
+/** Config location: DSH_ZHIHU_CONFIG → DSH_HOME → ~/.dsh (mode 0600). */
 export function configPath(): string {
-  const override = process.env.DSH_ZHIHU_CONFIG
-  return override !== undefined && override !== '' ? override : DEFAULT_CONFIG_FILE
+  return pluginPath(process.env.DSH_ZHIHU_CONFIG, 'dsh-zhihu.json')
 }
 
-/** Test override for the plugin scratch directory. */
+/** Scratch dir: DSH_ZHIHU_DATA_DIR → DSH_HOME → ~/.dsh. */
 export function dataDir(): string {
-  const override = process.env.DSH_ZHIHU_DATA_DIR
-  return override !== undefined && override !== '' ? override : DEFAULT_DATA_DIR
+  return pluginPath(process.env.DSH_ZHIHU_DATA_DIR, 'dsh-zhihu')
 }
 
 /** Persisted configuration. */

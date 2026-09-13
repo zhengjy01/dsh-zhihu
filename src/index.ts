@@ -124,6 +124,7 @@ export function apply(ctx: Context, config?: Config): void {
 }
 
 /** Re-exports for host consumers and the smoke tests. */
+export { dshHome, pluginPath } from './home.ts'
 export {
   DEFAULT_CONFIG_FILE,
   DEFAULT_DATA_DIR,
