@@ -132,6 +132,18 @@ Requires **DeepSeek Harness ≥ 0.1.5-rc.1** (declared in `dsh.engines.dsh`, whi
 - Zhihu applies risk control. This plugin is a thin wrapper — request volume and compliance are the caller's responsibility; do not crawl aggressively.
 - Zhihu's public API can change; the real command surface is whatever `zhihu <cmd> --help` reports locally.
 
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| Every command fails with `Not authenticated` | pyzhihu-cli needs a session for **all** commands, the hot list included. Run `zhihu_login` first. |
+| `403` with `code 40352`, a redirect to `/account/unhuman`, or "系统监测到您的网络环境存在异常" | Zhihu risk control rejects the request *fingerprint*, not just missing cookies — so re-pasting a cookie may not help. Use `zhihu_login({ mode: "browser" })` to import the real session from local Chrome, then retry. QR-code polling is anonymous and gets `403` on every poll, which is why scanning appears to do nothing. |
+| `403` with `code 10003` mentioning `x-zse-96` | The endpoint requires Zhihu's request signature. Topic detail is unavailable; `zhihu_question` automatically falls back to the answer list (the embedded `question.title` carries the title). |
+| `zhihu_status` reports the CLI unavailable | Install it (`uv tool install pyzhihu-cli`) or point `cliPath` at an absolute path. |
+| The panel's QR code never completes the login | Expected under risk control, for the reason above. Use the 「从 Chrome 导入登录态」 button in the panel instead. |
+
+Every failure now names which of these it is: `failureReason` classifies the CLI output instead of returning a bare timeout.
+
 ## Development
 
 ```bash
@@ -142,7 +154,10 @@ pnpm test              # smoke tests (real CLI calls; all writes land in a temp 
 pnpm test:e2e          # drive the plugin's own tools against the real CLI (no host restart)
 node tests/routes.mjs  # hit /api/dsh-zhihu/* with synthetic req/res
 node tests/client.mjs  # execute lib/client.js under a synthetic __ModuleLoader__
+pnpm verify:full       # portability check in an isolated DSH_HOME (tarball install + stability watch)
 ```
+
+Portability verification follows [`PORTABILITY-SOP.md`](./PORTABILITY-SOP.md) and must print `✅ 通过` before a release.
 
 Artifacts: `lib/index.js` (host, ESM) + `lib/client.js` (browser closure-factory) + `lib/types/` (.d.ts).
 

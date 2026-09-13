@@ -140,6 +140,18 @@ zhihu_login({ mode: "cookie", cookie: "z_c0=...; _xsrf=...; d_c0=..." })
 - 知乎有风控。插件是薄封装，频率与合规责任在使用方；请勿高频抓取。
 - 公开的知乎 API 行为可能变化；命令面以本机 `zhihu <cmd> --help` 为准（README 描述可能领先或落后于实际版本）。
 
+## 故障排查
+
+| 现象 | 原因与处理 |
+|---|---|
+| 所有命令都报 `Not authenticated` | pyzhihu-cli 的**所有**命令（含热榜）都要求先登录。先跑一次 `zhihu_login`。 |
+| `403` 且 `code 40352`、跳转 `/account/unhuman`，或「系统监测到您的网络环境存在异常」 | 知乎风控拦的是**请求指纹**，不只是缺 Cookie——所以重新粘贴 Cookie 往往无效。用 `zhihu_login({ mode: "browser" })` 从本机 Chrome 导入真实登录态后重试。扫码轮询是匿名请求，每轮都被 403，因此「扫了没反应」。 |
+| `403` 且 `code 10003`、提到 `x-zse-96` | 该接口要求知乎的请求签名。话题详情不可用；`zhihu_question` 已自动降级为回答列表（回答里内嵌 `question.title`，标题仍拿得到）。 |
+| `zhihu_status` 报 CLI 不可用 | 安装它（`uv tool install pyzhihu-cli`），或用 `cliPath` 指绝对路径。 |
+| 面板二维码一直登不上 | 风控下的预期结果，原因同上。请改用面板里的「从 Chrome 导入登录态」按钮。 |
+
+这四类失败现在会被 `failureReason` 分别识别并给出对应提示，而不是笼统报「超时」。
+
 ## 开发
 
 ```bash
@@ -150,7 +162,10 @@ pnpm test            # 冒烟测试（含真实 CLI 调用；写操作全部落�
 pnpm test:e2e        # 直接调插件工具跑真实 CLI（不用重启宿主）
 node tests/routes.mjs  # 用合成 req/res 打 /api/dsh-zhihu/* 路由
 node tests/client.mjs  # 在合成的 __ModuleLoader__ 里执行 lib/client.js，验证面板注册
+pnpm verify:full     # 在隔离 DSH_HOME 里做可移植性验证（tarball 安装 + 稳定性观察）
 ```
+
+可移植性验证按 [`PORTABILITY-SOP.md`](./PORTABILITY-SOP.md) 执行，发布前必须看到 `✅ 通过`。
 
 构建产物：`lib/index.js`（host，ESM）+ `lib/client.js`（浏览器，closure-factory）+ `lib/types/`（.d.ts）。
 
