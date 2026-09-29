@@ -123,7 +123,7 @@ The plugin writes the cookie straight into the CLI's `cookies.json` (byte-compat
 
 ## Compatibility
 
-Requires **DeepSeek Harness ≥ 0.1.5-rc.1** (declared in `dsh.engines.dsh`, which the plugin market reads) and is tested on **0.1.5-rc.1**. This build follows the DSH 0.1.5 strict tool-result contract (lossless-JSON snapshots, `additionalProperties: false` schema validation, `output.render` returning `ContentBlock[]`) and resolves the executable independently of the host `PATH` (a launchd-managed host only has `/usr/bin:/bin`).
+Requires **DeepSeek Harness ≥ 0.1.5-rc.1** (declared in `dsh.engines.dsh`, which the plugin market reads) and is tested on **0.1.5-rc.1**. This build follows the DSH 0.1.5 strict tool-result contract (lossless-JSON snapshots, `additionalProperties: false` schema validation, `output.render` returning `ContentBlock[]`) and resolves the executable independently of the host `PATH` (a launchd-managed host only has `/usr/bin:/bin`). **Since this version** the `peerDependencies` range explicitly declares compatibility with **DSH 0.2.0-rc.2** (`^0.2.0-rc.2` is now included), so no compatibility warning appears on 0.2.0-rc.2. No functional change.
 
 ## Known limitations
 

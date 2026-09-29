@@ -1,13 +1,16 @@
 /**
  * Sidebar entry for dsh-zhihu.
  *
- * Mirrors how the WeChat bridge mounts its ball: the entry joins the WeChat
- * entry in the left sidebar's settings area (`[class*="settingsArea"]`).
+ * The entry mounts into the left sidebar's settings area
+ * (`[class*="settingsArea"]`), which the shell renders as a VERTICAL block: an
+ * entry appended straight to it takes a whole row of its own, so the sidebar
+ * ends up with one full-width row per plugin.
  *
- * That area is a VERTICAL container, so simply appending there stacks the two
- * balls on top of each other. Instead the two balls are moved into one shared
- * horizontal row (`.dsh-zhihu-row`) so they read as a pair — WeChat on the
- * left, Zhihu on the right — and the popover opens bottom-left to match.
+ * Every sidebar entry therefore shares ONE horizontal row
+ * (`.dsh-sidebar-row`, `display:flex`) inside that area. The row is created by
+ * whichever entry mounts first and adopted by the rest — it must not be keyed
+ * on another plugin's DOM (the WeChat ball it originally waited for is not
+ * installed in every profile, which left every entry stacked).
  *
  * If the settings area never appears (a shell without it), the entry falls back
  * to a fixed bottom-right ball.
@@ -34,15 +37,25 @@ const STYLE_ID = 'dsh-zhihu-floating/styles'
 /** Class marking the inline (sidebar) placement. */
 const INLINE_CLASS = 'dsh-zhihu-inline'
 
-/** The settings row the WeChat entry also mounts into. */
+/** The settings area this entry mounts into. */
 const SETTINGS_AREA_SELECTOR = '[class*="settingsArea"]'
 
-/** The WeChat entry's ball; the two entries share one row. */
-const WECHAT_BALL_SELECTOR = '.dshwx-ball'
+/** The shared footer row every sidebar entry converges on. */
+const ROW_CLASS = 'dsh-sidebar-row'
 
-/** The horizontal row that holds the WeChat ball and ours side by side. */
-const ROW_CLASS = 'dsh-zhihu-row'
-const ROW_SELECTOR = '.' + ROW_CLASS
+/** Any row a sibling plugin may have made — legacy names included, so a partial upgrade still merges. */
+const ROW_SELECTORS = ['.' + ROW_CLASS, '.dsh-zhihu-row', '.dshupd-row', '.dshrst-row']
+
+/** The entries that belong in that row, in the order they should read. */
+const ROW_ENTRIES: ReadonlyArray<{ selector: string; order: number }> = [
+  { selector: '.dshwx-ball', order: 10 },
+  { selector: '#dsh-zhihu-floating-entry', order: 20 },
+  { selector: '#dsh-updater-entry', order: 30 },
+  { selector: '#dsh-restart-entry', order: 40 },
+]
+
+/** This entry's place in the row (fixed, so mount order never reshuffles it). */
+const ROW_ORDER = 20
 
 /** Debounce for the placement observer (ms). */
 const PLACEMENT_DEBOUNCE_MS = 250
@@ -55,13 +68,14 @@ const CSS = [
   'display:flex;align-items:center;justify-content:center;',
   'box-shadow:0 6px 20px rgba(5,109,232,.35);transition:transform .15s}',
   '#dsh-zhihu-floating-entry .dsh-zhihu-ball:hover{transform:scale(1.06)}',
-  // The shared row keeps the two entries side by side inside the (vertical)
-  // settings area, instead of stacking them.
-  '.' + ROW_CLASS + '{display:flex;align-items:center;justify-content:flex-start}',
-  // Inline placement: a plain 36px flex item sitting next to the WeChat ball.
+  // The shared row keeps every sidebar entry side by side inside the (vertical)
+  // settings area, instead of stacking them; it wraps only when it must.
+  '.' + ROW_CLASS + '{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-start;',
+  'gap:2px;flex:1 1 auto;min-width:0;box-sizing:border-box}',
+  // Inline placement: a plain 36px flex item sitting in that row.
   '#' + CONTAINER_ID + '.' + INLINE_CLASS + '{display:flex;align-items:center;flex:none}',
   '#' + CONTAINER_ID + '.' + INLINE_CLASS + ' .dsh-zhihu-ball{position:static;width:36px;height:36px;',
-  'margin:0 0 0 8px;flex:none;box-shadow:none;font-size:15px;display:inline-flex;vertical-align:middle}',
+  'margin:0;flex:none;box-shadow:none;font-size:15px;display:inline-flex;vertical-align:middle}',
   '#' + CONTAINER_ID + '.' + INLINE_CLASS + ' .dsh-zhihu-ball:hover{transform:scale(1.08)}',
   '#dsh-zhihu-floating-entry .dsh-zhihu-pop{position:fixed;right:24px;bottom:88px;z-index:2147483001;',
   'border-radius:12px;box-shadow:0 14px 44px rgba(0,0,0,.22);overflow:hidden;color:inherit}',
@@ -130,12 +144,65 @@ let root: Root | null = null
 let observer: MutationObserver | null = null
 let scheduled = false
 
+/** Find the shared row, whichever plugin made it. */
+function findRow(area: Element): HTMLElement | null {
+  for (const selector of ROW_SELECTORS) {
+    const row = area.querySelector<HTMLElement>(selector)
+    if (row !== null) return row
+  }
+  return null
+}
+
 /**
- * Place the container: inline in the sidebar settings area when it exists
- * (immediately after the WeChat ball when present), else fixed bottom-right.
+ * Put `container` into the shared footer row, creating the row when none exists.
  *
- * Idempotent — it mutates only when the current position is wrong, so the
+ * The shell's settings area is a vertical block, so an entry appended straight
+ * to it takes a whole row of its own. The row is what makes the entries read as
+ * one horizontal line, and creating it must not depend on any other plugin: the
+ * WeChat bridge is not installed in every profile, and keying creation on its
+ * ball is what used to leave every entry stacked.
+ *
+ * Idempotent — it mutates only while something is out of place, so the
  * placement observer settles instead of looping.
+ * @param container - this plugin's entry container.
+ * @param area - the sidebar's settings area.
+ */
+function joinRow(container: HTMLElement, area: HTMLElement): void {
+  let row = findRow(area)
+  if (row === null) {
+    row = document.createElement('div')
+    row.className = ROW_CLASS
+    row.dataset.plugin = 'dsh-sidebar-row'
+  } else {
+    // Normalise a row another plugin (or an older build) created, so the shared
+    // flex styling applies to it as well.
+    row.classList.add(ROW_CLASS)
+  }
+  // Fold duplicate rows into this one (two plugins can mount in the same tick),
+  // then adopt every known entry still parked in the vertical settings area.
+  for (const selector of ROW_SELECTORS) {
+    for (const other of Array.from(area.querySelectorAll<HTMLElement>(selector))) {
+      if (other === row) continue
+      for (const child of Array.from(other.children)) row.appendChild(child)
+      other.remove()
+    }
+  }
+  for (const entry of ROW_ENTRIES) {
+    for (const node of Array.from(area.querySelectorAll<HTMLElement>(entry.selector))) {
+      if (node.parentElement !== row) row.appendChild(node)
+      // Fixed order, so mount order and observer ticks never reshuffle the row.
+      node.style.order = String(entry.order)
+    }
+  }
+  if (container.parentElement !== row) row.appendChild(container)
+  container.style.order = String(ROW_ORDER)
+  // The row reads below the settings button, and has to be mounted.
+  if (row.parentElement !== area || area.lastElementChild !== row) area.appendChild(row)
+}
+
+/**
+ * Place the container: inline in the sidebar's shared footer row when the
+ * settings area exists, else fixed at the bottom-right corner.
  * @param container - the entry container.
  */
 function place(container: HTMLElement): void {
@@ -146,31 +213,7 @@ function place(container: HTMLElement): void {
     return
   }
   container.classList.add(INLINE_CLASS)
-
-  const wechatBall = area.querySelector<HTMLElement>(WECHAT_BALL_SELECTOR)
-  if (wechatBall === null) {
-    // No sibling entry to pair with: sit directly in the settings area.
-    if (container.parentNode !== area) area.appendChild(container)
-    return
-  }
-
-  // The settings area is a vertical container, so the two balls must share one
-  // horizontal row or they stack. The row takes the WeChat ball's slot so the
-  // pair stays where it already was.
-  let row = area.querySelector<HTMLElement>(ROW_SELECTOR)
-  if (row === null) {
-    row = document.createElement('div')
-    row.className = ROW_CLASS
-    if (wechatBall.parentNode === area) area.insertBefore(row, wechatBall)
-    else area.appendChild(row)
-  } else if (row.parentNode !== area) {
-    area.appendChild(row)
-  }
-
-  if (wechatBall.parentNode !== row) row.appendChild(wechatBall)
-  if (container.parentNode !== row) row.appendChild(container)
-  // Deterministic left-to-right order, independent of mount order.
-  if (container.previousSibling !== wechatBall) row.insertBefore(container, wechatBall.nextSibling)
+  joinRow(container, area)
 }
 
 /** Debounced re-placement (the sidebar re-renders often). */
@@ -187,15 +230,6 @@ function schedulePlacement(container: HTMLElement): void {
 function teardown(): void {
   observer?.disconnect()
   observer = null
-  // Unwind the shared row: give the WeChat ball back to the settings area and
-  // drop the wrapper, so a hot reload leaves no orphan row behind.
-  const area = document.querySelector<HTMLElement>(SETTINGS_AREA_SELECTOR)
-  const row = document.querySelector<HTMLElement>(ROW_SELECTOR)
-  if (row !== null) {
-    const wechatBall = row.querySelector<HTMLElement>(WECHAT_BALL_SELECTOR)
-    if (wechatBall !== null && area !== null) area.appendChild(wechatBall)
-    if (row.parentNode !== null) row.parentNode.removeChild(row)
-  }
   const current = root
   root = null
   if (current !== null) {
@@ -207,6 +241,12 @@ function teardown(): void {
   }
   const node = document.getElementById(CONTAINER_ID)
   if (node !== null && node.parentNode !== null) node.parentNode.removeChild(node)
+  // The row is shared, so it is dropped only when nothing else is using it.
+  for (const selector of ROW_SELECTORS) {
+    for (const row of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
+      if (row.childElementCount === 0) row.remove()
+    }
+  }
 }
 
 /**

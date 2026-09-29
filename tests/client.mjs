@@ -34,10 +34,11 @@ function check(label, condition, detail = '') {
 /* A tiny fake DOM, enough for placement + class assertions            */
 /* ------------------------------------------------------------------ */
 
-/** Minimal selector support: `[class*="x"]` and `.x`. */
+/** Minimal selector support: `[class*="x"]`, `.x` and `#id`. */
 function matchesSelector(node, selector) {
   const bracket = /\[class\*="([^"]+)"\]/.exec(selector)
   if (bracket !== null) return node.className.includes(bracket[1])
+  if (selector.startsWith('#')) return node.id === selector.slice(1)
   if (selector.startsWith('.')) return node.className.split(/\s+/).includes(selector.slice(1))
   return false
 }
@@ -70,6 +71,9 @@ function makeNode(tag) {
       child.parentNode = null
       return child
     },
+    remove() {
+      if (node.parentNode !== null) node.parentNode.removeChild(node)
+    },
     querySelector(selector) {
       for (const child of node.children) {
         if (matchesSelector(child, selector)) return child
@@ -77,6 +81,23 @@ function makeNode(tag) {
         if (nested !== null) return nested
       }
       return null
+    },
+    querySelectorAll(selector) {
+      const found = []
+      for (const child of node.children) {
+        if (matchesSelector(child, selector)) found.push(child)
+        found.push(...child.querySelectorAll(selector))
+      }
+      return found
+    },
+    get childElementCount() {
+      return node.children.length
+    },
+    get lastElementChild() {
+      return node.children[node.children.length - 1] ?? null
+    },
+    get parentElement() {
+      return node.parentNode
     },
     get nextSibling() {
       if (node.parentNode === null) return null
@@ -114,8 +135,9 @@ documentRoot.appendChild(body)
 /** Build a fresh document stub; optionally with a settings area holding the WeChat ball. */
 function makeDocument({ withSettingsArea = true, wechatBall = true } = {}) {
   head.children.length = 0
-  body.children.length = 0
   for (const child of body.children) child.parentNode = null
+  body.children.length = 0
+  observers.length = 0
   const documentStub = {
     head,
     body,
@@ -136,6 +158,7 @@ function makeDocument({ withSettingsArea = true, wechatBall = true } = {}) {
       if (selector.includes('settingsArea')) return withSettingsArea ? findSettingsArea() : null
       return body.querySelector(selector)
     },
+    querySelectorAll: (selector) => documentRoot.querySelectorAll(selector),
   }
   if (withSettingsArea) {
     const area = makeNode('div')
@@ -183,7 +206,8 @@ check('声明了插件 id', code.includes('"@zhengjunyao/dsh-zhihu"') || code.in
 check('不含 node 内建 require（fs/path）', !/require\(["'](?:node:)?(?:fs|path|os)["']\)/.test(code))
 check('内联了侧栏锚点选择器', code.includes('settingsArea'))
 check('内联了微信球选择器（保持顺序）', code.includes('dshwx-ball'))
-check('内联了共用的横向行容器', code.includes('dsh-zhihu-row'))
+check('内联了共用的横向行容器', code.includes('dsh-sidebar-row'))
+check('行不依赖微信球（没有锚点也能建行）', !code.includes('ANCHOR_BALL_SELECTOR'))
 
 console.log('\n[2] 外部依赖白名单')
 const requiredModules = [...code.matchAll(/require\(["']([^"']+)["']\)/g)].map((match) => match[1])
@@ -250,6 +274,8 @@ check('导出 apply 函数', typeof runA.exports.apply === 'function')
 
 console.log('\n[4] apply() 行为与挂载点')
 runA.exports.apply(runA.ctx)
+/** documentA 这次挂载注册的观察器，供 [5] 单独驱动（后面的用例会重置 observers）。 */
+const watchedA = observers[observers.length - 1]
 check('注册到 settings.section', runA.slotCalls.includes('settings.section'), runA.slotCalls.join(', '))
 const entry = runA.recorded.registered[0]
 check('section id 为 zhihu', entry?.descriptor?.id === 'zhihu', String(entry?.descriptor?.id))
@@ -259,16 +285,32 @@ check('注入了样式标签', head.children.some((node) => node.tagName === 'st
 const container = documentA.getElementById('dsh-zhihu-floating-entry')
 check('入口容器已创建', container !== null)
 const area = findSettingsArea()
-const row = area.querySelector('.dsh-zhihu-row')
-check('与微信球共用一个横向行容器', row !== null && container?.parentNode === row, String(container?.parentNode?.className))
+const row = area.querySelector('.dsh-sidebar-row')
+check('创建/加入共用的横向行容器', row !== null && container?.parentNode === row, String(container?.parentNode?.className))
 check('行挂在侧栏 settingsArea 内', row?.parentNode === area)
+check('行是 settingsArea 的最后一个子节点（排在设置按钮下面）', area.lastElementChild === row)
 check('容器带 inline 标记类', container?.classList.contains('dsh-zhihu-inline') === true)
 const wechatBall = area.querySelector('.dshwx-ball')
 check('微信球也被收进行里（避免上下叠）', wechatBall?.parentNode === row)
-check('行内顺序：微信球在左、知球在右', row?.children[0] === wechatBall && row?.children[1] === container)
+check(
+  '行内顺序固定：微信球 order 10、知球 order 20',
+  wechatBall?.style?.order === '10' && container?.style?.order === '20',
+  `${wechatBall?.style?.order} / ${container?.style?.order}`,
+)
+
+console.log('\n[4b] 没有微信球时仍然成行（桌面 App 没装微信插件的真实条件）')
+const documentC = makeDocument({ withSettingsArea: true, wechatBall: false })
+const runC = evaluate(documentC)
+runC.exports.apply(runC.ctx)
+const areaC = findSettingsArea()
+const containerC = documentC.getElementById('dsh-zhihu-floating-entry')
+const rowC = areaC.querySelector('.dsh-sidebar-row')
+check('没有微信球也建了横向行', rowC !== null && containerC?.parentNode === rowC, String(containerC?.parentNode?.className))
+check('没有微信球时行仍挂在 settingsArea 内', rowC?.parentNode === areaC)
+check('没有微信球时入口不直接挂在 settingsArea 下', containerC?.parentNode !== areaC)
 
 console.log('\n[5] 观察器与自愈')
-const watched = observers[observers.length - 1]
+const watched = watchedA
 check('注册了 MutationObserver', watched !== undefined)
 check(
   '观察 body 的 childList + subtree',
@@ -285,10 +327,9 @@ area2.appendChild(ball2)
 body.children.length = 0
 body.appendChild(area2)
 watched.fire()
-const row2 = area2.querySelector('.dsh-zhihu-row')
+const row2 = area2.querySelector('.dsh-sidebar-row')
 check('侧栏重建后自动重新挂回', container?.parentNode === row2, String(container?.parentNode?.className))
 check('重建后又造了一个共用的行', row2 !== null && ball2.parentNode === row2)
-check('重建后顺序仍为微信球在左、知球在右', row2?.children[0] === ball2 && row2?.children[1] === container)
 
 console.log('\n[6] 没有 settingsArea 时回退右下角')
 observers.length = 0
@@ -298,7 +339,7 @@ runB.exports.apply(runB.ctx)
 const containerB = documentB.getElementById('dsh-zhihu-floating-entry')
 check('回退挂到 body', containerB?.parentNode === body)
 check('回退时去掉 inline 标记', containerB?.classList.contains('dsh-zhihu-inline') === false)
-check('回退时不造多余的行', body.querySelector('.dsh-zhihu-row') === null)
+check('回退时不造多余的行', body.querySelector('.dsh-sidebar-row') === null)
 
 console.log('\n[7] 重复 apply 不叠加')
 runA.exports.apply(runA.ctx)
